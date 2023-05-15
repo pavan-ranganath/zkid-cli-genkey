@@ -1,0 +1,22 @@
+{
+  "name": "zkid-cli-genkey",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "figlet": "^1.6.0",
+    "inquirer": "^9.2.3",
+    "libsodium-wrappers": "^0.7.11",
+    "tweetnacl-util": "^0.15.1"
+  },
+  "devDependencies": {
+    "@types/figlet": "^1.5.6"
+  }
+}
