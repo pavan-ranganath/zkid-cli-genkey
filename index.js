@@ -5,15 +5,18 @@ import path from "path";
 import { fileURLToPath } from 'url';
 import os from "os";
 import libSodiumWrapper from "libsodium-wrappers";
-import tweetnaclUtil from "tweetnacl-util";
+import {chalk, Chalk} from 'chalk-pipe';
+import dotenv from 'dotenv'
+dotenv.config()
 
 const __filename = fileURLToPath(import.meta.url);
 
 const __dirname = path.dirname(__filename);
 
-
-const pivateKeyPathFromEnv = process.env.zKID_PRIVATE_KEY
-const publicKeyPathFromEnv = process.env.zKID_PUBLIC_KEY
+if(!process.env.zKID_KEY_PATH) {
+    process.env.zKID_KEY_PATH =  path.join(os.homedir(), "/.zKID");
+}
+const KeyPathFromEnv = process.env.zKID_KEY_PATH
 figlet("zKID Keystore", function (err, data) {
     if (err) {
         console.log("Something went wrong...");
@@ -33,7 +36,7 @@ function options() {
                 message: 'What do you want to do?',
                 choices: [
                     { name: 'Generate Keypair', value: 'genKeyPair' },
-                    pivateKeyPathFromEnv ?
+                    (fs.existsSync(KeyPathFromEnv + '/privateKey') || fs.existsSync(KeyPathFromEnv + '/publicKey')) ?
                         {
                             name: 'Location of key', value: 'keyLocation'
                         } : {
@@ -49,17 +52,18 @@ function options() {
                 inquirer.prompt({
                     type: 'input',
                     name: 'keyPath',
-                    message: "Location to store keys ?",
+                    message: "Location to store keys ? (If key is alrerady present in the directory, it will be replaced with new keys)",
                     default() {
-                        return path.join(os.homedir(), "/.ssh/zKID");
+                        return KeyPathFromEnv
                     },
                 },).then((userInput) => {
+                    
                     // console.log('keyPath', userInput)
-                    generateKeys(userInput);
+                    keyStore(userInput.keyPath);
                 }
                 )
             } else if (answers.action === 'keyLocation') {
-                console.log('keyLocation');
+                console.log('Location:',chalk.blueBright(KeyPathFromEnv))
             } else {
                 console.log("Unknown option")
             }
@@ -67,17 +71,35 @@ function options() {
 
 }
 
-function generateKeys(userInput) {
+function keyStore(destinationPath) {
     try {
-        mkDirByPathSync(userInput.keyPath);
-        const keys = libSodiumWrapper.crypto_sign_keypair()
-        let keyObj = { publicKey: tweetnaclUtil.encodeBase64(keys.publicKey),privateKey: tweetnaclUtil.encodeBase64(keys.privateKey),keyType:keys.keyType }
-        fs.writeFileSync(path.join(userInput.keyPath,"key.json"),JSON.stringify(keyObj))
-        // fs.writeFileSync(path.join(userInput.keyPath,"private.pem"), Buffer.from(keyObj.privateKey,'base64'))
-
+        mkDirByPathSync(destinationPath);
+        checkIfKeyExists(destinationPath)
+        const generatedKey = libSodiumWrapper.crypto_sign_keypair("hex")
+        storeKey(destinationPath, generatedKey);
+        console.log(chalk.greenBright("Key Generated and stored successfully in:"),chalk.blueBright(destinationPath));
     } catch (error) {
         console.log("Error....")
         console.error(error);
+    }
+}
+
+function storeKey(destinationPath, generatedKey) {
+    process.env.zKID_PRIVATE_KEY = destinationPath;
+    fs.writeFileSync(path.join(destinationPath, "privateKey"), generatedKey.privateKey, { mode: '400' });
+    fs.writeFileSync(path.join(destinationPath, "publicKey"), generatedKey.publicKey);
+}
+
+function checkIfKeyExists(keyDir) {
+
+    try {
+        if (fs.existsSync(keyDir + '/privateKey') || fs.existsSync(keyDir + '/publicKey')) {
+            fs.rmSync(keyDir + '/privateKey')
+            fs.rmSync(keyDir + '/publicKey')
+        }
+    } catch (err) {
+        console.log(`Key does no exist in ${filePath}`);
+
     }
 }
 
