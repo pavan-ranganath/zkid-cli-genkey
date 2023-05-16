@@ -49,17 +49,24 @@ function options() {
         ])
         .then((answers) => {
             if (answers.action === 'genKeyPair') {
-                inquirer.prompt({
+                inquirer.prompt([{
                     type: 'input',
                     name: 'keyPath',
                     message: "Location to store keys ? (If key is alrerady present in the directory, it will be replaced with new keys)",
                     default() {
                         return KeyPathFromEnv
                     },
-                },).then((userInput) => {
+                },{
+                    type: 'input',
+                    name: 'keyName',
+                    message: "Enter filename",
+                    default() {
+                        return 'id_ed25519'
+                    },
+                }]).then((userInput) => {
                     
                     // console.log('keyPath', userInput)
-                    keyStore(userInput.keyPath);
+                    genKey(userInput);
                 }
                 )
             } else if (answers.action === 'keyLocation') {
@@ -71,36 +78,25 @@ function options() {
 
 }
 
-function keyStore(destinationPath) {
+function genKey(destinationPathandName) {
     try {
-        mkDirByPathSync(destinationPath);
-        checkIfKeyExists(destinationPath)
+        mkDirByPathSync(destinationPathandName.keyPath);
+        // checkIfKeyExists(destinationPath)
         const generatedKey = libSodiumWrapper.crypto_sign_keypair("hex")
-        storeKey(destinationPath, generatedKey);
-        console.log(chalk.greenBright("Key Generated and stored successfully in:"),chalk.blueBright(destinationPath));
+        saveKey(destinationPathandName, generatedKey);
+        console.log(chalk.greenBright("Key Generated and saved successfully"));
+        console.log(chalk.blueBright("Your private key has been saved in",`${destinationPathandName.keyPath}/${destinationPathandName.keyName}`));
+        console.log(chalk.blueBright("Your public key has been saved in",`${destinationPathandName.keyPath}/${destinationPathandName.keyName}.pub`));
     } catch (error) {
         console.log("Error....")
         console.error(error);
     }
 }
 
-function storeKey(destinationPath, generatedKey) {
-    process.env.zKID_PRIVATE_KEY = destinationPath;
-    fs.writeFileSync(path.join(destinationPath, "privateKey"), generatedKey.privateKey, { mode: '400' });
-    fs.writeFileSync(path.join(destinationPath, "publicKey"), generatedKey.publicKey);
-}
-
-function checkIfKeyExists(keyDir) {
-
-    try {
-        if (fs.existsSync(keyDir + '/privateKey') || fs.existsSync(keyDir + '/publicKey')) {
-            fs.rmSync(keyDir + '/privateKey')
-            fs.rmSync(keyDir + '/publicKey')
-        }
-    } catch (err) {
-        console.log(`Key does no exist in ${filePath}`);
-
-    }
+function saveKey(destinationPathandName, generatedKey) {
+    process.env.zKID_KEY_PATH = destinationPathandName.keyPath;
+    fs.writeFileSync(path.join(destinationPathandName.keyPath, `/${destinationPathandName.keyName}`), generatedKey.privateKey, { mode: '600' });
+    fs.writeFileSync(path.join(destinationPathandName.keyPath, `/${destinationPathandName.keyName}.pub`), generatedKey.publicKey);
 }
 
 function mkDirByPathSync(targetDir, { isRelativeToScript = false } = {}) {
