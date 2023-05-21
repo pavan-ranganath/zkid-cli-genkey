@@ -1,129 +1,115 @@
-import figlet from "figlet";
-import inquirer from 'inquirer';
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from 'url';
-import os from "os";
-import libSodiumWrapper from "libsodium-wrappers";
-import {chalk, Chalk} from 'chalk-pipe';
-import dotenv from 'dotenv'
-dotenv.config()
+const asn1 = require('asn1.js');
+const elliptic = require('elliptic');
+const forge = require('node-forge');
+const fs = require('fs');
+const { KeyPair } = require('elliptic').eddsa;
+const nacl = require('tweetnacl');
+const crypto = require('crypto');
+const { decodeBase64, encodeBase64 } = require('tweetnacl-util');
 
-const __filename = fileURLToPath(import.meta.url);
+const locationOfServerPrivateKey = 'openssl-keys/private_key_x25519.pem';
+const locationOfServerPublicKey = 'openssl-keys/public_key_x25519.pem';
+const locationClientPrivateKey = 'openssl-keys/private_key_x25519_2.pem';
+const locationClientPublicKey = 'openssl-keys/public_key_x25519_2.pem';
 
-const __dirname = path.dirname(__filename);
+// const locationOfServerPrivateKey = 'openssl-keys/rsa_private.pem';
+// const locationOfServerPublicKey = 'openssl-keys/rsa_public.pem';
+// const locationClientPrivateKey = 'openssl-keys/rsa_private_1.pem';
+// const locationClientPublicKey = 'openssl-keys/rsa_public_1.pem';
 
-if(!process.env.zKID_KEY_PATH) {
-    process.env.zKID_KEY_PATH =  path.join(os.homedir(), "/.zKID");
-}
-const KeyPathFromEnv = process.env.zKID_KEY_PATH
-figlet("zKID Keystore", function (err, data) {
-    if (err) {
-        console.log("Something went wrong...");
-        console.dir(err);
-        return;
-    }
-    console.log(data);
-    options();
+
+// Load the key pair from PEM files
+
+const readKeysFromPem = (publicKey, privateKey) => {
+    const pemToBuffer = (pem) => Buffer.from(pem
+        .replace('-----BEGIN PUBLIC KEY-----', '')
+        .replace('-----END PUBLIC KEY-----', '')
+        .replace('-----BEGIN PRIVATE KEY-----', '')
+        .replace('-----END PRIVATE KEY-----', '')
+        .replace(/\n/g, ''), 'base64');
+
+    const publicKeyBuffer = pemToBuffer(publicKey);
+    const privateKeyBuffer = pemToBuffer(privateKey);
+
+    return {
+        publicKey: publicKeyBuffer,
+        privateKey: privateKeyBuffer,
+    };
+};
+
+// Define the ASN.1 schema for Ed25519 private keys
+const Ed25519PrivateKey = asn1.define('Ed25519PrivateKey', function () {
+    return this.seq().obj(
+        this.key('tbsCertificate').int(),
+        this.key('signatureAlgorithm').seq().obj(
+            this.key('algorithm').objid()
+        ),
+        this.key('key').octstr().obj(
+            this.key('privateKey').octstr()
+        ),
+    );
 });
 
-function options() {
-    inquirer
-        .prompt([
-            {
-                type: 'list',
-                name: 'action',
-                message: 'What do you want to do?',
-                choices: [
-                    { name: 'Generate Keypair', value: 'genKeyPair' },
-                    (fs.existsSync(KeyPathFromEnv + '/privateKey') || fs.existsSync(KeyPathFromEnv + '/publicKey')) ?
-                        {
-                            name: 'Location of key', value: 'keyLocation'
-                        } : {
-                            name: 'Location of key',
-                            disabled: 'Keys not yet generated',
-                        },
-                ],
-            },
+// ASN.1 schema for Ed25519 public key
+const Ed25519PublicKey = asn1.define('PublicKey', function () {
+    this.seq().obj(
+        this.key('tbsCertificate').seq().obj(
+            this.key('signatureAlgorithm').objid(),
+        ),
+        this.key('signatureValue').bitstr()
+    );
+});
 
-        ])
-        .then((answers) => {
-            if (answers.action === 'genKeyPair') {
-                inquirer.prompt([{
-                    type: 'input',
-                    name: 'keyPath',
-                    message: "Location to store keys ? (If key is alrerady present in the directory, it will be replaced with new keys)",
-                    default() {
-                        return KeyPathFromEnv
-                    },
-                },{
-                    type: 'input',
-                    name: 'keyName',
-                    message: "Enter filename",
-                    default() {
-                        return 'id_ed25519'
-                    },
-                }]).then((userInput) => {
-                    
-                    // console.log('keyPath', userInput)
-                    genKey(userInput);
-                }
-                )
-            } else if (answers.action === 'keyLocation') {
-                console.log('Location:',chalk.blueBright(KeyPathFromEnv))
-            } else {
-                console.log("Unknown option")
-            }
-        });
 
-}
+// SERVER SIDE
+const serverPrivateKeyPem = fs.readFileSync(locationOfServerPrivateKey, 'utf8');
 
-function genKey(destinationPathandName) {
-    try {
-        mkDirByPathSync(destinationPathandName.keyPath);
-        // checkIfKeyExists(destinationPath)
-        const generatedKey = libSodiumWrapper.crypto_sign_keypair("hex")
-        saveKey(destinationPathandName, generatedKey);
-        console.log(chalk.greenBright("Key Generated and saved successfully"));
-        console.log(chalk.blueBright("Your private key has been saved in",`${destinationPathandName.keyPath}/${destinationPathandName.keyName}`));
-        console.log(chalk.blueBright("Your public key has been saved in",`${destinationPathandName.keyPath}/${destinationPathandName.keyName}.pub`));
-    } catch (error) {
-        console.log("Error....")
-        console.error(error);
-    }
-}
+const serverPublicKeyPem = fs.readFileSync(locationOfServerPublicKey, 'utf8');
 
-function saveKey(destinationPathandName, generatedKey) {
-    process.env.zKID_KEY_PATH = destinationPathandName.keyPath;
-    fs.writeFileSync(path.join(destinationPathandName.keyPath, `/${destinationPathandName.keyName}`), generatedKey.privateKey, { mode: '600' });
-    fs.writeFileSync(path.join(destinationPathandName.keyPath, `/${destinationPathandName.keyName}.pub`), generatedKey.publicKey);
-}
+const { publicKey: extractedServerPublicKey, privateKey: extractedServerPrivateKey } = readKeysFromPem(serverPublicKeyPem, serverPrivateKeyPem);
 
-function mkDirByPathSync(targetDir, { isRelativeToScript = false } = {}) {
-    const sep = path.sep;
-    const initDir = path.isAbsolute(targetDir) ? sep : '';
-    const baseDir = isRelativeToScript ? __dirname : '.';
+// Parse the ASN.1 private key
+const parsedServerPrivateKey = Ed25519PrivateKey.decode(Buffer.from(extractedServerPrivateKey, 'hex'), 'der');
+const parsedServerPublicKey = Ed25519PublicKey.decode(Buffer.from(extractedServerPublicKey, 'hex'), 'der');
 
-    return targetDir.split(sep).reduce((parentDir, childDir) => {
-        const curDir = path.resolve(baseDir, parentDir, childDir);
-        try {
-            fs.mkdirSync(curDir);
-        } catch (err) {
-            if (err.code === 'EEXIST') { // curDir already exists!
-                return curDir;
-            }
+// Extract the private key value
+const serverPrivateKey = parsedServerPrivateKey.key.privateKey;
+const serverPublicKey = parsedServerPublicKey.signatureValue.data;
 
-            // To avoid `EISDIR` error on Mac and `EACCES`-->`ENOENT` and `EPERM` on Windows.
-            if (err.code === 'ENOENT') { // Throw the original parentDir error on curDir `ENOENT` failure.
-                throw new Error(`EACCES: permission denied, mkdir '${parentDir}'`);
-            }
+// Display the extracted key
+console.log("serverPrivateKey",serverPrivateKey.toString('hex'));
+console.log("serverPublicKey",serverPublicKey.toString('hex'));
 
-            const caughtErr = ['EACCES', 'EPERM', 'EISDIR'].indexOf(err.code) > -1;
-            if (!caughtErr || caughtErr && curDir === path.resolve(targetDir)) {
-                throw err; // Throw if it's just the last created dir.
-            }
-        }
 
-        return curDir;
-    }, initDir);
-}
+
+// CLIENT SIDE
+const clientPrivateKeyPem = fs.readFileSync(locationClientPrivateKey, 'utf8');
+const clientPublicKeyPem = fs.readFileSync(locationClientPublicKey, 'utf8');
+
+const { publicKey: extractedclientPublicKey, privateKey: extractedclientPrivateKey } = readKeysFromPem(clientPublicKeyPem, clientPrivateKeyPem);
+
+// Parse the ASN.1 private key
+const parsedclientPrivateKey = Ed25519PrivateKey.decode(Buffer.from(extractedclientPrivateKey, 'hex'), 'der');
+const parsedclientPublicKey = Ed25519PublicKey.decode(Buffer.from(extractedclientPublicKey, 'hex'), 'der');
+
+// Extract the private key value
+const clientPrivateKey = parsedclientPrivateKey.key.privateKey;
+const clientPublicKey = parsedclientPublicKey.signatureValue.data;
+
+// Display the extracted key
+console.log("clientPrivateKey",clientPrivateKey.toString('hex'));
+console.log("clientPublicKey",clientPublicKey.toString('hex'));
+
+// GENERATE SHARED KEY
+// Generate shared key on the client-side
+const clientSharedKey = nacl.box.before(serverPublicKey, clientPrivateKey);
+
+// Generate shared key on the server-side
+const serverSharedKey = nacl.box.before(clientPublicKey, serverPrivateKey);
+
+// Encode shared keys as Base64
+const clientSharedKeyBase64 = Buffer.from(clientSharedKey).toString('base64');
+const serverSharedKeyBase64 = Buffer.from(serverSharedKey).toString('base64');
+
+console.log('Client shared key (Base64):', clientSharedKeyBase64);
+console.log('Server shared key (Base64):', serverSharedKeyBase64);
