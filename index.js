@@ -4,6 +4,8 @@ const forge = require('node-forge');
 const fs = require('fs');
 const { KeyPair } = require('elliptic').eddsa;
 const nacl = require('tweetnacl');
+const util = require('tweetnacl-util');
+
 const crypto = require('crypto');
 const { decodeBase64, encodeBase64 } = require('tweetnacl-util');
 
@@ -77,8 +79,8 @@ const serverPrivateKey = parsedServerPrivateKey.key.privateKey;
 const serverPublicKey = parsedServerPublicKey.signatureValue.data;
 
 // Display the extracted key
-console.log("serverPrivateKey",serverPrivateKey.toString('hex'));
-console.log("serverPublicKey",serverPublicKey.toString('hex'));
+console.log("serverPrivateKey", serverPrivateKey.toString('hex'));
+console.log("serverPublicKey", serverPublicKey.toString('hex'));
 
 
 
@@ -101,8 +103,8 @@ const clientPrivateKey = keyPair.secretKey
 const clientPublicKey = keyPair.publicKey
 
 // Display the extracted key
-console.log("clientPrivateKey",clientPrivateKey.toString('hex'));
-console.log("clientPublicKey",clientPublicKey.toString('hex'));
+console.log("clientPrivateKey", clientPrivateKey.toString('hex'));
+console.log("clientPublicKey", clientPublicKey.toString('hex'));
 
 // GENERATE SHARED KEY
 // Generate shared key on the client-side
@@ -117,3 +119,40 @@ const serverSharedKeyBase64 = Buffer.from(serverSharedKey).toString('base64');
 
 console.log('Client shared key (Base64):', clientSharedKeyBase64);
 console.log('Server shared key (Base64):', serverSharedKeyBase64);
+
+// Encrypt the message using the shared key
+function encryptString(message, sharedKey) {
+    const nonce = nacl.randomBytes(nacl.box.nonceLength);
+    const messageUint8 = util.decodeUTF8(message);
+    const encrypted = nacl.box.after(messageUint8, nonce, sharedKey);
+    const encryptedMessage = new Uint8Array(nonce.length + encrypted.length);
+    encryptedMessage.set(nonce);
+    encryptedMessage.set(encrypted, nonce.length);
+    return util.encodeBase64(encryptedMessage);
+}
+
+// Decrypt the encrypted message using the shared key
+function decryptString(encryptedMessage, sharedKey) {
+    const encryptedMessageUint8 = util.decodeBase64(encryptedMessage);
+    const nonce = encryptedMessageUint8.slice(0, nacl.box.nonceLength);
+    const message = encryptedMessageUint8.slice(nacl.box.nonceLength);
+    const decrypted = nacl.box.open.after(message, nonce, sharedKey);
+    if (!decrypted) {
+        throw new Error('Failed to decrypt message.');
+    }
+    return util.encodeUTF8(decrypted);
+}
+
+// Example usage
+const message = {
+    name: "Entrada Solutions Pvt Ltd",
+    country: "India",
+    age: 5
+};
+const encryptedMessage = encryptString(JSON.stringify(message), serverSharedKey);
+const decryptedMessage = decryptString(encryptedMessage, clientSharedKey);
+
+
+console.log('Original message:', message);
+console.log(`Encrypted '${message}' using serverSharedKey:`, encryptedMessage);
+console.log(`Decrypted '${encryptedMessage}' using clientSharedKey:`, decryptedMessage);
