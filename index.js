@@ -93,8 +93,12 @@ const parsedclientPrivateKey = Ed25519PrivateKey.decode(Buffer.from(extractedcli
 const parsedclientPublicKey = Ed25519PublicKey.decode(Buffer.from(extractedclientPublicKey, 'hex'), 'der');
 
 // Extract the private key value
-const clientPrivateKey = parsedclientPrivateKey.key.privateKey;
-const clientPublicKey = parsedclientPublicKey.signatureValue.data;
+// const clientPrivateKey = parsedclientPrivateKey.key.privateKey;
+// const clientPublicKey = parsedclientPublicKey.signatureValue.data;
+
+const keyPair = nacl.box.keyPair()
+const clientPrivateKey = keyPair.secretKey
+const clientPublicKey = keyPair.publicKey
 
 // Display the extracted key
 console.log("clientPrivateKey",clientPrivateKey.toString('hex'));
