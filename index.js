@@ -1,19 +1,22 @@
 const asn1 = require('asn1.js');
-const elliptic = require('elliptic');
-const forge = require('node-forge');
+
 const fs = require('fs');
-const { KeyPair } = require('elliptic').eddsa;
+const eddsa = require('elliptic');
 const nacl = require('tweetnacl');
 const util = require('tweetnacl-util');
 
-const crypto = require('crypto');
-const { decodeBase64, encodeBase64 } = require('tweetnacl-util');
+var ed2curve = require('ed2curve');
+// const locationOfServerPrivateKey = 'openssl-keys/private_key_x25519.pem';
+// const locationOfServerPublicKey = 'openssl-keys/public_key_x25519.pem';
+// const locationClientPrivateKey = 'openssl-keys/private_key_x25519_2.pem';
+// const locationClientPublicKey = 'openssl-keys/public_key_x25519_2.pem';
 
-const locationOfServerPrivateKey = 'openssl-keys/private_key_x25519.pem';
-const locationOfServerPublicKey = 'openssl-keys/public_key_x25519.pem';
-const locationClientPrivateKey = 'openssl-keys/private_key_x25519_2.pem';
-const locationClientPublicKey = 'openssl-keys/public_key_x25519_2.pem';
+const locationOfServerPrivateKey = 'openssl-keys/ed25519_openssl_1';
+const locationOfServerPublicKey = 'openssl-keys/ed25519_openssl_1.pub';
+const locationClientPrivateKey = 'openssl-keys/private.pem';
+const locationClientPublicKey = 'openssl-keys/public.pem';
 
+// const nobleEd25519 = require('@noble/ed25519')
 // const locationOfServerPrivateKey = 'openssl-keys/rsa_private.pem';
 // const locationOfServerPublicKey = 'openssl-keys/rsa_public.pem';
 // const locationClientPrivateKey = 'openssl-keys/rsa_private_1.pem';
@@ -95,23 +98,48 @@ const parsedclientPrivateKey = Ed25519PrivateKey.decode(Buffer.from(extractedcli
 const parsedclientPublicKey = Ed25519PublicKey.decode(Buffer.from(extractedclientPublicKey, 'hex'), 'der');
 
 // Extract the private key value
-// const clientPrivateKey = parsedclientPrivateKey.key.privateKey;
-// const clientPublicKey = parsedclientPublicKey.signatureValue.data;
+const clientPrivateKey = parsedclientPrivateKey.key.privateKey;
+const clientPublicKey = parsedclientPublicKey.signatureValue.data;
 
-const keyPair = nacl.box.keyPair()
-const clientPrivateKey = keyPair.secretKey
-const clientPublicKey = keyPair.publicKey
+// const clientPrivateKey = parsedclientPrivateKey.secretKey
+// const clientPublicKey = parsedclientPublicKey.publicKey
 
 // Display the extracted key
 console.log("clientPrivateKey", clientPrivateKey.toString('hex'));
 console.log("clientPublicKey", clientPublicKey.toString('hex'));
 
+
+function edToX25519(ed25519PrivateKeyBytes, ed25519PublicKeyBytes) {
+    // Convert the private key from curveEd25519 to curveX25519
+    const x25519PrivateKeyBytes = nacl.sign.keyPair.fromSeed(ed25519PrivateKeyBytes).secretKey;
+
+    // Convert the public key from curveEd25519 to curveX25519
+    const x25519PublicKeyBytes =nacl.sign.keyPair.fromSeed(ed25519PublicKeyBytes).publicKey;
+    return { privateKey: x25519PrivateKeyBytes, publicKey: x25519PublicKeyBytes }
+}
+
+let msg = util.decodeUTF8("Hello")
+// let keys = edToX25519(clientPrivateKey, clientPublicKey)
+let ed25519EllipticLib = new eddsa.eddsa('ed25519')
+let signedMsg = ed25519EllipticLib.sign(msg,clientPrivateKey)
+
+let verifyMsg = ed25519EllipticLib.verify(msg,signedMsg,clientPublicKey.toString('hex'))
+
+
+let convertedServerPrivateKey = ed2curve.convertSecretKey(serverPrivateKey)
+let convertedServerPublicKey = ed2curve.convertPublicKey(serverPublicKey)
+
+
+let convertedClientPrivateKey = ed2curve.convertSecretKey(clientPrivateKey)
+let convertedClientPublicKey = ed2curve.convertPublicKey(clientPublicKey)
+
+
 // GENERATE SHARED KEY
 // Generate shared key on the client-side
-const clientSharedKey = nacl.box.before(serverPublicKey, clientPrivateKey);
+const clientSharedKey = nacl.box.before(convertedServerPublicKey, convertedClientPrivateKey);
 
 // Generate shared key on the server-side
-const serverSharedKey = nacl.box.before(clientPublicKey, serverPrivateKey);
+const serverSharedKey = nacl.box.before(convertedClientPublicKey, convertedServerPrivateKey);
 
 // Encode shared keys as Base64
 const clientSharedKeyBase64 = Buffer.from(clientSharedKey).toString('base64');
