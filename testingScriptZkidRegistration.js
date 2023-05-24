@@ -101,34 +101,20 @@ const parsedclientPublicKey = Ed25519PublicKey.decode(Buffer.from(extractedclien
 const clientPrivateKey = parsedclientPrivateKey.key.privateKey;
 const clientPublicKey = parsedclientPublicKey.signatureValue.data;
 
-// const clientPrivateKey = parsedclientPrivateKey.secretKey
-// const clientPublicKey = parsedclientPublicKey.publicKey
 
 // Display the extracted key
 console.log("clientPrivateKey", clientPrivateKey.toString('hex'));
 console.log("clientPublicKey", clientPublicKey.toString('hex'));
 
 
-function edToX25519(ed25519PrivateKeyBytes, ed25519PublicKeyBytes) {
-    // Convert the private key from curveEd25519 to curveX25519
-    const x25519PrivateKeyBytes = nacl.sign.keyPair.fromSeed(ed25519PrivateKeyBytes).secretKey;
-
-    // Convert the public key from curveEd25519 to curveX25519
-    const x25519PublicKeyBytes =nacl.sign.keyPair.fromSeed(ed25519PublicKeyBytes).publicKey;
-    return { privateKey: x25519PrivateKeyBytes, publicKey: x25519PublicKeyBytes }
-}
-
-let msg = util.decodeUTF8("Hello")
-// let keys = edToX25519(clientPrivateKey, clientPublicKey)
-let ed25519EllipticLib = new eddsa.eddsa('ed25519')
-let signedMsg = ed25519EllipticLib.sign(msg,clientPrivateKey)
-
-let verifyMsg = ed25519EllipticLib.verify(msg,signedMsg,clientPublicKey.toString('hex'))
-
-
 let convertedServerPrivateKey = ed2curve.convertSecretKey(serverPrivateKey)
 let convertedServerPublicKey = ed2curve.convertPublicKey(serverPublicKey)
 
+const toHexString = (bytes) => {
+    return Array.from(bytes, (byte) => {
+      return ('0' + (byte & 0xff).toString(16)).slice(-2);
+    }).join('');
+  };
 
 let convertedClientPrivateKey = ed2curve.convertSecretKey(clientPrivateKey)
 let convertedClientPublicKey = ed2curve.convertPublicKey(clientPublicKey)
@@ -172,12 +158,8 @@ function decryptString(encryptedMessage, sharedKey) {
 }
 
 // Example usage
-const message = {
-    name: "Entrada Solutions Pvt Ltd",
-    country: "India",
-    age: 5
-};
-const encryptedMessage = encryptString(JSON.stringify(message), serverSharedKey);
+const message = "cf98d980c7e479ebd9fad6c568d03ebc05b7497086376222f30403d9fa6ad601";
+const encryptedMessage = encryptString(message, serverSharedKey);
 const decryptedMessage = decryptString(encryptedMessage, clientSharedKey);
 
 
